@@ -1,0 +1,196 @@
+name: Compile Kernel with susfs
+
+on:
+  workflow_dispatch:
+    inputs:
+      clang_version:
+        description: Type the clang version of ur kernel
+        required: true
+        type: choice
+        options:
+          - clang-3289846
+          - clang-r547379
+          - clang-r563880
+          - clang-r563880c
+          - clang-r574158
+          - clang-stable
+          - clang-536225
+          
+      kernel_source:
+        description: Kernel Source Code
+        required: true
+        type: choice
+        options:
+          - LineageOS
+          - crdroidandroid
+          - yaap
+          
+      kernel_branch:
+        description: Kernel Branch(such as lineage-23.2 sixteen-qpr1)
+        required: true
+        type: string
+        default: "lineage-22.2"
+        
+      ksu_type:
+        description: "KernelSU Version"
+        required: true
+        type: choice
+        options:
+          - None
+          - KernelSU-by-xx
+          - ReSukiSU-with-susfs
+jobs:
+  Kernel_CI:
+    env:
+        GH_TOKEN: ${{ github.token }}
+        SOC: msm8998
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup SWAP
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 16
+          
+      - name: Install build dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+          bc bison flex \
+          libssl-dev \
+          libelf-dev \
+          libdw-dev \
+          build-essential \
+          lz4 \
+          git \
+          python3 \
+          curl \
+          dwarves \
+          cpio \
+          gcc-aarch64-linux-gnu \
+          gcc-arm-linux-gnueabi
+          
+      - name: Clone Kernel Source
+        run: |
+          case "${{ inputs.kernel_source }}" in
+            "yaap")
+              git clone --depth=1 -b ${{ inputs.kernel_branch }} https://github.com/yaap/kernel_oneplus_${SOC}.git ${SOC}
+              ;;
+            *)
+              git clone --depth=1 -b ${{ inputs.kernel_branch }} https://github.com/${{ inputs.kernel_source }}/android_kernel_oneplus_${SOC}.git ${SOC}
+              ;;
+          esac
+
+      - name: Download AOSP Clang
+        run: |
+          mkdir -p toolchains/${{ inputs.clang_version }}
+          cd toolchains
+
+          curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android16-qpr2-release/${{ inputs.clang_version }}.tar.gz
+          tar -xf "${{ inputs.clang_version }}.tar.gz" -C ${{ inputs.clang_version }}
+
+      - name: Compile Kernel
+        run: |
+          CLANG_ROOT="${GITHUB_WORKSPACE}/toolchains/${{ inputs.clang_version }}/bin"
+          export PATH="${CLANG_ROOT}:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export LLVM=1
+          export LLVM_IAS=1
+          export CC="${CLANG_ROOT}/clang"
+          export CXX="${CLANG_ROOT}/clang++"
+          export HOSTCC="${CLANG_ROOT}/clang"
+          export HOSTCXX="${CLANG_ROOT}/clang++"
+          export LD="${CLANG_ROOT}/ld.lld"
+          export AR="${CLANG_ROOT}/llvm-ar"
+          export NM="${CLANG_ROOT}/llvm-nm"
+          export OBJCOPY="${CLANG_ROOT}/llvm-objcopy"
+          export OBJDUMP="${CLANG_ROOT}/llvm-objdump"
+          export STRIP="${CLANG_ROOT}/llvm-strip"
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+          cd ${SOC}
+
+          case "${{ inputs.ksu_type }}" in
+          
+            "None")
+              ;;
+              
+            "KernelSU-by-xx")
+              curl -LSs "https://raw.githubusercontent.com/backslashxx/KernelSU/refs/heads/master/kernel/setup.sh" | bash -s master
+              ;;
+            "ReSukiSU-with-susfs")
+              curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s main
+          esac
+
+          touch ./.scmversion
+          
+          # 关键修改：为 KernelSU-by-xx 分支添加 SUSFS 补丁
+          if [[ "${{ inputs.ksu_type }}" == "KernelSU-by-xx" ]] || [[ "${{ inputs.ksu_type }}" == *susfs ]]; then
+            # 下载 SUSFS 补丁文件
+            curl -Lo susfs.patch https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/Patch/susfs_patch_to_4.14.patch
+            curl -Lo inline.sh https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/refs/heads/mainline/Patches/susfs_inline_hook_patches.sh
+            
+            # 应用补丁
+            patch -p1 < susfs.patch
+            bash inline.sh
+            
+            # 添加 SUSFS 配置到 defconfig
+            echo "CONFIG_KSU=y" >> arch/arm64/configs/lineage_oneplus5_defconfig
+            echo "CONFIG_KSU_SUSFS=y" >> arch/arm64/configs/lineage_oneplus5_defconfig
+            echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> arch/arm64/configs/lineage_oneplus5_defconfig
+            echo "CONFIG_KSU_SUSFS_SUS_MOUNT=y" >> arch/arm64/configs/lineage_oneplus5_defconfig
+            echo "CONFIG_KSU_SUSFS_SUS_KSTAT=y" >> arch/arm64/configs/lineage_oneplus5_defconfig
+            echo "CONFIG_KSU_SUSFS_SPOOF_UNAME=n" >> arch/arm64/configs/lineage_oneplus5_defconfig
+            echo "CONFIG_KSU_SUSFS_ENABLE_LOG=y" >> arch/arm64/configs/lineage_oneplus5_defconfig
+            echo "CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y" >> arch/arm64/configs/lineage_oneplus5_defconfig
+            echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> arch/arm64/configs/lineage_oneplus5_defconfig
+            echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> arch/arm64/configs/lineage_oneplus5_defconfig
+          fi
+
+          # 首先生成 .config 文件
+          case "${{ inputs.kernel_source }}" in
+            "yaap")
+              make O=out gulch_defconfig vendor/debugfs.config
+              ;;
+            *)
+              make O=out lineage_oneplus5_defconfig
+              ;;
+          esac
+          
+          # 然后修改 out/.config，但先检查是否已存在
+          if [[ "${{ inputs.ksu_type }}" != "None" ]]; then
+            # 先删除已存在的配置项，避免重复定义警告
+            grep -v "CONFIG_KSU_TAMPER_SYSCALL_TABLE" out/.config > out/.config.tmp && mv out/.config.tmp out/.config
+            # 添加新的配置项
+            echo "CONFIG_KSU_TAMPER_SYSCALL_TABLE=y" >> out/.config
+          fi
+          
+          make -j4 O=out Image
+
+
+
+
+      - name: Make AnyKernel3
+        run: |
+          ZIP_NAME="${{ inputs.ksu_type }}_$(date -u +"%Y%m%d_%H%M")"
+          git clone https://github.com/Kernel-SU/AnyKernel3.git
+          cp ${SOC}/out/arch/arm64/boot/Image AnyKernel3/Image
+          cp ${SOC}/out/arch/arm64/boot/Image ./Image
+          cd AnyKernel3
+          sed -i "s|ksu_supported=false|ksu_supported=true|" anykernel.sh
+          
+          zip -r9 ../"${ZIP_NAME}.zip" * -x .git
+
+      - name: Create GitHub Release
+        run: |
+          REL_NAME="${SOC}_${{ inputs.kernel_source }}-${{ inputs.kernel_branch }}_${{ inputs.ksu_type }}_$(date -u +"%Y%m%d_%H%M")"
+          cd ${GITHUB_WORKSPACE}
+          ZIP_FILE=$(ls *.zip)
+          gh release create "$REL_NAME" --title "$REL_NAME" --notes "" "${ZIP_FILE}" Image
