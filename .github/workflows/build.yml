@@ -1,4 +1,4 @@
-name: Compile Kernel for OnePlus 5 (MSM8998)
+name: Compile Kernel
 
 on:
   workflow_dispatch:
@@ -25,7 +25,7 @@ on:
           - OnePlus12R-development
           
       kernel_branch:
-        description: 'Kernel Branch (e.g., lineage-22.2)'
+        description: Kernel Branch(such as lineage-23.2 sixteen-qpr1)
         required: true
         type: string
         default: "lineage-22.2"
@@ -48,7 +48,7 @@ jobs:
     env:
         GH_TOKEN: ${{ github.token }}
         SOC: msm8998
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       actions: read
@@ -76,12 +76,12 @@ jobs:
           curl \
           dwarves \
           cpio \
-          gcc-aarch64-linux-gnu \
-          libncurses5 libtinfo5
+          gcc-aarch64-linux-gnu
           
       - name: Clone Kernel Source
         run: |
-          git clone --depth=1 -b ${{ inputs.kernel_branch }} https://github.com/${{ inputs.kernel_source }}/android_kernel_oneplus_msm8998.git msm8998
+          git clone --depth=1 -b ${{ inputs.kernel_branch }} https://github.com/${{ inputs.kernel_source }}/android_kernel_oneplus_${SOC}.git ${SOC}
+          git clone --depth=1 -b ${{ inputs.kernel_branch }} https://github.com/${{ inputs.kernel_source }}/android_kernel_oneplus_${SOC}-modules.git ${SOC}-modules
 
       - name: Download AOSP Clang
         run: |
@@ -90,48 +90,6 @@ jobs:
 
           curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android16-qpr2-release/${{ inputs.clang_version }}.tar.gz
           tar -xf "${{ inputs.clang_version }}.tar.gz" -C ${{ inputs.clang_version }}
-
-      - name: Apply Clang 9 Compatibility Patch
-        if: ${{ inputs.clang_version == 'clang-3289846' }}
-        run: |
-          cd msm8998
-          
-          echo "Applying Clang 9 compatibility patches for ARM64..."
-          
-          # 修复 Clang 9 中 ARM64 的 SP 寄存器错误
-          # 方案1：使用 x18 寄存器
-          if grep -q 'register unsigned long current_stack_pointer asm ("sp");' arch/arm64/include/asm/stack_pointer.h; then
-            sed -i 's/register unsigned long current_stack_pointer asm ("sp");/register unsigned long current_stack_pointer asm ("x18");/g' arch/arm64/include/asm/stack_pointer.h
-            echo "Patched with x18 register"
-          else
-            echo "SP register already patched or in different format"
-          fi
-          
-          # 方案2：备份原始文件
-          cp arch/arm64/include/asm/stack_pointer.h arch/arm64/include/asm/stack_pointer.h.backup
-          
-          # 方案3：完全重写文件
-          cat > arch/arm64/include/asm/stack_pointer.h << 'EOF'
-          #ifndef __ASM_STACK_POINTER_H
-          #define __ASM_STACK_POINTER_H
-          
-          #include <linux/const.h>
-          
-          #ifdef CONFIG_CLANG_VERSION
-          #if CONFIG_CLANG_VERSION < 100000
-          /* Workaround for Clang 9 compatibility */
-          register unsigned long current_stack_pointer asm ("x18");
-          #else
-          register unsigned long current_stack_pointer asm ("sp");
-          #endif
-          #else
-          register unsigned long current_stack_pointer asm ("sp");
-          #endif
-          
-          #endif /* __ASM_STACK_POINTER_H */
-          EOF
-          
-          echo "Patch application completed"
 
       - name: Compile Kernel
         run: |
@@ -152,31 +110,42 @@ jobs:
           export OBJDUMP="${CLANG_ROOT}/llvm-objdump"
           export STRIP="${CLANG_ROOT}/llvm-strip"
 
-          cd msm8998
+          cd ${SOC}
 
           case "${{ inputs.ksu_type }}" in
           
             "None")
+              echo "CONFIG_KSU_TAMPER_SYSCALL_TABLE=y" >> arch/arm64/configs/gki_defconfig
               ;;
               
             "Official-KernelSU")
               curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
+              
+              echo "CONFIG_KSU_TAMPER_SYSCALL_TABLE=y" >> arch/arm64/configs/gki_defconfig
               ;;
               
             "KowSU")
                curl -LSs "https://raw.githubusercontent.com/KOWX712/KernelSU/main/kernel/setup.sh" | bash -s master
+               
+               echo "CONFIG_KSU_TAMPER_SYSCALL_TABLE=y" >> arch/arm64/configs/gki_defconfig
               ;;
 
             "KernelSU-Next")
               curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -s dev
+              
+              echo "CONFIG_KSU_TAMPER_SYSCALL_TABLE=y" >> arch/arm64/configs/gki_defconfig
               ;;
 
             "KernelSU-Next-with-susfs")
               curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/refs/heads/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
+              
+              echo "CONFIG_KSU_TAMPER_SYSCALL_TABLE=y" >> arch/arm64/configs/gki_defconfig
               ;;
 
             "ReSukiSU"|"ReSukiSU-with-susfs")
               curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s main
+              
+              echo "CONFIG_KSU_TAMPER_SYSCALL_TABLE=y" >> arch/arm64/configs/gki_defconfig
               ;;
           esac
           
@@ -202,25 +171,25 @@ jobs:
           touch ./.scmversion
           
           echo "CONFIG_TMPFS_XATTR=y" >> arch/arm64/configs/gki_defconfig
-          echo "CONFIG_KSU_TAMPER_SYSCALL_TABLE=y" >> arch/arm64/configs/gki_defconfig
-          make O=out gki_defconfig
+          make O=out gki_defconfig vendor/kalama_GKI.config vendor/oplus/kalama_GKI.config vendor/debugfs.config
           
           make -j2 O=out Image
+
 
       - name: Make AnyKernel3
         run: |
           ZIP_NAME="${{ inputs.ksu_type }}_$(date -u +"%Y%m%d_%H%M")"
           git clone https://github.com/Kernel-SU/AnyKernel3.git
 
-          cp msm8998/out/arch/arm64/boot/Image AnyKernel3/Image
-          cp msm8998/out/arch/arm64/boot/Image ./Image
+          cp ${SOC}/out/arch/arm64/boot/Image AnyKernel3/Image
+          cp ${SOC}/out/arch/arm64/boot/Image ./Image
           cd AnyKernel3
 
           zip -r9 ../"${ZIP_NAME}.zip" * -x .git
 
       - name: Create GitHub Release
         run: |
-          REL_NAME="msm8998_${{ inputs.kernel_source }}-${{ inputs.kernel_branch }}_${{ inputs.ksu_type }}_$(date -u +"%Y%m%d_%H%M")"
+          REL_NAME="${SOC}_${{ inputs.kernel_source }}-${{ inputs.kernel_branch }}_${{ inputs.ksu_type }}_$(date -u +"%Y%m%d_%H%M")"
           cd ${GITHUB_WORKSPACE}
           ZIP_FILE=$(ls *.zip)
           gh release create "$REL_NAME" --title "$REL_NAME" --notes "" "${ZIP_FILE}" Image
