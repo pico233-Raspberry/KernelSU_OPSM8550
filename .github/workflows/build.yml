@@ -96,30 +96,42 @@ jobs:
         run: |
           cd msm8998
           
+          echo "Applying Clang 9 compatibility patches for ARM64..."
+          
           # 修复 Clang 9 中 ARM64 的 SP 寄存器错误
-          cat > clang9_fix.patch << 'EOF'
-          diff --git a/arch/arm64/include/asm/stack_pointer.h b/arch/arm64/include/asm/stack_pointer.h
-          index 1234567..89abcde 100644
-          --- a/arch/arm64/include/asm/stack_pointer.h
-          +++ b/arch/arm64/include/asm/stack_pointer.h
-          @@ -4,7 +4,7 @@
-           #define __ASM_STACK_POINTER_H
-           
-           #include <linux/const.h>
-          -register unsigned long current_stack_pointer asm ("sp");
-          +register unsigned long current_stack_pointer asm ("x28");
-           
-           #endif /* __ASM_STACK_POINTER_H */
+          # 方案1：使用 x18 寄存器
+          if grep -q 'register unsigned long current_stack_pointer asm ("sp");' arch/arm64/include/asm/stack_pointer.h; then
+            sed -i 's/register unsigned long current_stack_pointer asm ("sp");/register unsigned long current_stack_pointer asm ("x18");/g' arch/arm64/include/asm/stack_pointer.h
+            echo "Patched with x18 register"
+          else
+            echo "SP register already patched or in different format"
+          fi
+          
+          # 方案2：备份原始文件
+          cp arch/arm64/include/asm/stack_pointer.h arch/arm64/include/asm/stack_pointer.h.backup
+          
+          # 方案3：完全重写文件
+          cat > arch/arm64/include/asm/stack_pointer.h << 'EOF'
+          #ifndef __ASM_STACK_POINTER_H
+          #define __ASM_STACK_POINTER_H
+          
+          #include <linux/const.h>
+          
+          #ifdef CONFIG_CLANG_VERSION
+          #if CONFIG_CLANG_VERSION < 100000
+          /* Workaround for Clang 9 compatibility */
+          register unsigned long current_stack_pointer asm ("x18");
+          #else
+          register unsigned long current_stack_pointer asm ("sp");
+          #endif
+          #else
+          register unsigned long current_stack_pointer asm ("sp");
+          #endif
+          
+          #endif /* __ASM_STACK_POINTER_H */
           EOF
           
-          # 应用补丁
-          patch -p1 -f < clang9_fix.patch || echo "Patch applied or already present"
-          
-          # 备用方案：直接修改文件
-          sed -i 's/register unsigned long current_stack_pointer asm ("sp");/register unsigned long current_stack_pointer asm ("x28");/g' arch/arm64/include/asm/stack_pointer.h
-          
-          # 可选：修复 spinlock 汇编约束错误
-          sed -i 's/"I" (1 << TICKET_SHIFT)/"r" (1 << TICKET_SHIFT)/g' arch/arm64/include/asm/spinlock.h 2>/dev/null || true
+          echo "Patch application completed"
 
       - name: Compile Kernel
         run: |
