@@ -76,7 +76,9 @@ jobs:
           curl \
           dwarves \
           cpio \
-          gcc-aarch64-linux-gnu
+          gcc-aarch64-linux-gnu \
+          libncurses5 libtinfo5
+
           
       - name: Clone Kernel Source
         run: |
