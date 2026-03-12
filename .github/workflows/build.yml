@@ -122,6 +122,7 @@ jobs:
               
             "KernelSU-by-xx")
               curl -LSs "https://raw.githubusercontent.com/backslashxx/KernelSU/refs/heads/master/kernel/setup.sh" | bash -s master
+              echo "CONFIG_KSU_TAMPER_SYSCALL_TABLE=y" >> out/.config
               ;;
             "ReSukiSU-with-susfs")
               curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s main
@@ -147,13 +148,13 @@ jobs:
             echo "CONFIG_KSU_SUSFS_SUS_MAP=y" >> arch/arm64/configs/lineage_oneplus5_defconfig
           fi
 
-          # 统一使用 lineage_oneplus5_defconfig
+          # 修改：移除不存在的 vendor/oplus.config
           case "${{ inputs.kernel_source }}" in
             "yaap")
               make O=out gulch_defconfig vendor/debugfs.config
               ;;
             *)
-              make O=out lineage_oneplus5_defconfig vendor/oplus.config
+              make O=out lineage_oneplus5_defconfig
               ;;
           esac
           
@@ -162,6 +163,7 @@ jobs:
           fi
           
           make -j2 O=out Image
+
 
 
 
