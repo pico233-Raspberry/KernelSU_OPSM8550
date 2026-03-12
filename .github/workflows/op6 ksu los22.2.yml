@@ -141,7 +141,7 @@ jobs:
             patch -p1 < susfs.patch
             bash inline.sh
             
-            # 添加 SUSFS 配置到 defconfig
+            # 添加 SUSFS 配置到 defconfig - 修改1：改为sdm845_defconfig
             echo "CONFIG_KSU=y" >> arch/arm64/configs/sdm845_defconfig
             echo "CONFIG_KSU_SUSFS=y" >> arch/arm64/configs/sdm845_defconfig
             echo "CONFIG_KSU_SUSFS_SUS_PATH=y" >> arch/arm64/configs/sdm845_defconfig
@@ -160,6 +160,7 @@ jobs:
               make O=out gulch_defconfig vendor/debugfs.config
               ;;
             *)
+              # 修改2：改为sdm845_defconfig
               make O=out sdm845_defconfig
               ;;
           esac
@@ -173,6 +174,7 @@ jobs:
           fi
           
           make -j4 O=out Image
+
 
 
 
