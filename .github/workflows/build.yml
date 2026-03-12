@@ -13,6 +13,7 @@ on:
           - clang-r563880
           - clang-r563880c
           - clang-r574158
+          - clang-r416183b
           - clang-stable
           
       kernel_source:
