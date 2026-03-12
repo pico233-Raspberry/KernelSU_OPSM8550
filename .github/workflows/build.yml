@@ -1,4 +1,4 @@
-name: Compile Kernel
+name: Compile Kernel for OnePlus 5 (MSM8998)
 
 on:
   workflow_dispatch:
@@ -13,7 +13,6 @@ on:
           - clang-r563880
           - clang-r563880c
           - clang-r574158
-          - clang-r458507
           - clang-stable
           
       kernel_source:
@@ -26,10 +25,10 @@ on:
           - OnePlus12R-development
           
       kernel_branch:
-        description: Kernel Branch(such as lineage-23.2 sixteen-qpr1)
+        description: 'Kernel Branch (e.g., lineage-22.2)'
         required: true
         type: string
-        default: ""
+        default: "lineage-22.2"
         
       ksu_type:
         description: "KernelSU Version"
@@ -79,7 +78,6 @@ jobs:
           cpio \
           gcc-aarch64-linux-gnu \
           libncurses5 libtinfo5
-
           
       - name: Clone Kernel Source
         run: |
@@ -90,8 +88,38 @@ jobs:
           mkdir -p toolchains/${{ inputs.clang_version }}
           cd toolchains
 
-          curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+log/refs/heads/master/${{ inputs.clang_version }}.tar.gz
+          curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android16-qpr2-release/${{ inputs.clang_version }}.tar.gz
           tar -xf "${{ inputs.clang_version }}.tar.gz" -C ${{ inputs.clang_version }}
+
+      - name: Apply Clang 9 Compatibility Patch
+        if: ${{ inputs.clang_version == 'clang-3289846' }}
+        run: |
+          cd msm8998
+          
+          # 修复 Clang 9 中 ARM64 的 SP 寄存器错误
+          cat > clang9_fix.patch << 'EOF'
+          diff --git a/arch/arm64/include/asm/stack_pointer.h b/arch/arm64/include/asm/stack_pointer.h
+          index 1234567..89abcde 100644
+          --- a/arch/arm64/include/asm/stack_pointer.h
+          +++ b/arch/arm64/include/asm/stack_pointer.h
+          @@ -4,7 +4,7 @@
+           #define __ASM_STACK_POINTER_H
+           
+           #include <linux/const.h>
+          -register unsigned long current_stack_pointer asm ("sp");
+          +register unsigned long current_stack_pointer asm ("x28");
+           
+           #endif /* __ASM_STACK_POINTER_H */
+          EOF
+          
+          # 应用补丁
+          patch -p1 -f < clang9_fix.patch || echo "Patch applied or already present"
+          
+          # 备用方案：直接修改文件
+          sed -i 's/register unsigned long current_stack_pointer asm ("sp");/register unsigned long current_stack_pointer asm ("x28");/g' arch/arm64/include/asm/stack_pointer.h
+          
+          # 可选：修复 spinlock 汇编约束错误
+          sed -i 's/"I" (1 << TICKET_SHIFT)/"r" (1 << TICKET_SHIFT)/g' arch/arm64/include/asm/spinlock.h 2>/dev/null || true
 
       - name: Compile Kernel
         run: |
