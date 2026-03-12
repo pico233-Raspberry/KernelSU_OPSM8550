@@ -81,7 +81,6 @@ jobs:
       - name: Clone Kernel Source
         run: |
           git clone --depth=1 -b ${{ inputs.kernel_branch }} https://github.com/${{ inputs.kernel_source }}/android_kernel_oneplus_msm8998.git msm8998
-          git clone --depth=1 -b ${{ inputs.kernel_branch }} https://github.com/${{ inputs.kernel_source }}/android_kernel_oneplus_msm8998-modules.git msm8998-modules
 
       - name: Download AOSP Clang
         run: |
