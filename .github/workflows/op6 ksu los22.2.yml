@@ -1,4 +1,4 @@
-name: Compile Kernel
+name: Compile Kernelop6
 on:
   workflow_dispatch:
     inputs:
@@ -70,17 +70,17 @@ jobs:
       run: |
         case "${{ inputs.kernel_source }}" in
           "yaap")
-            git clone --depth=1 -b ${{ inputs.kernel_branch }} yaap/kernel_oneplus_${SOC}.git ${SOC}
+            git clone --depth=1 -b ${{ inputs.kernel_branch }} https://github.com/yaap/kernel_oneplus_${SOC}.git ${SOC}
             ;;
           *)
-            git clone --depth=1 -b ${{ inputs.kernel_branch }} LineageOS/android_kernel_oneplus_${SOC}.git ${SOC}
+            git clone --depth=1 -b ${{ inputs.kernel_branch }} https://github.com/LineageOS/android_kernel_oneplus_${SOC}.git ${SOC}
             ;;
         esac
     - name: Download AOSP Clang
       run: |
         mkdir -p toolchains/${{ inputs.clang_version }}
         cd toolchains
-        curl -LO ${{ inputs.clang_version }}.tar.gz
+        curl -LO https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android16-qpr2-release/${{ inputs.clang_version }}.tar.gz
         tar -xf "${{ inputs.clang_version }}.tar.gz" -C ${{ inputs.clang_version }}
     - name: Compile Kernel
       run: |
