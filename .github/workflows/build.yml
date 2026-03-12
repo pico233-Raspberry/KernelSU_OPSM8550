@@ -72,7 +72,8 @@ jobs:
           curl \
           dwarves \
           cpio \
-          gcc-aarch64-linux-gnu
+          gcc-aarch64-linux-gnu \
+          gcc-arm-linux-gnueabi
           
       - name: Clone Kernel Source
         run: |
@@ -112,6 +113,8 @@ jobs:
           export OBJDUMP="${CLANG_ROOT}/llvm-objdump"
           export STRIP="${CLANG_ROOT}/llvm-strip"
           export CROSS_COMPILE=aarch64-linux-gnu-
+          # 添加 32 位 ARM 交叉编译工具链
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
           cd ${SOC}
 
@@ -157,12 +160,16 @@ jobs:
               ;;
           esac
           
-          # 然后才能修改 out/.config
+          # 然后修改 out/.config，但先检查是否已存在
           if [[ "${{ inputs.ksu_type }}" != "None" ]]; then
+            # 先删除已存在的配置项，避免重复定义警告
+            grep -v "CONFIG_KSU_TAMPER_SYSCALL_TABLE" out/.config > out/.config.tmp && mv out/.config.tmp out/.config
+            # 添加新的配置项
             echo "CONFIG_KSU_TAMPER_SYSCALL_TABLE=y" >> out/.config
           fi
           
           make -j4 O=out Image
+
 
 
       - name: Make AnyKernel3
