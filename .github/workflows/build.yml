@@ -28,7 +28,7 @@ on:
         description: Kernel Branch(such as lineage-23.2 sixteen-qpr1)
         required: true
         type: string
-        default: "lineage22.2"
+        default: "lineage-22.2"
         
       ksu_type:
         description: "KernelSU Version"
